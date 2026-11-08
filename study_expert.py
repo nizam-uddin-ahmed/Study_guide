@@ -1,0 +1,435 @@
+"""
+STUDY METHOD FINDER - a simple expert system
+
+How it works (3 steps):
+  1. We ASK the user 13 questions.
+  2. We check 55 IF rules. Every rule that is true gives points to a study method.
+  3. We SHOW the 3 methods with the most points, and explain why.
+
+Run with:  streamlit run app.py
+"""
+import streamlit as st
+
+st.set_page_config(page_title="Study Method Finder", page_icon="📚")
+
+
+# =====================================================================
+# PART 1: THE STUDY METHODS  (what we can recommend)
+# Each method has a short description and 3 steps.
+# =====================================================================
+METHODS = {
+    "Spaced Repetition": {
+        "info": "Review the same material at growing gaps (1 day, 3 days, 7 days) so it moves into long-term memory.",
+        "steps": ["Put key facts on flashcards (paper or an app like Anki).",
+                  "Review them today, then after 1, 3, 7 and 14 days.",
+                  "Remove cards you always get right. Repeat the ones you miss."],
+    },
+    "Active Recall (Flashcards)": {
+        "info": "Test yourself instead of re-reading. Pulling facts out of your head is what builds memory.",
+        "steps": ["Close the book and write down everything you remember.",
+                  "Check what you missed and make flashcards for those gaps.",
+                  "Quiz yourself every day until you stop missing them."],
+    },
+    "Practice Problems": {
+        "info": "Solve many problems yourself. You learn problem solving by solving, not by watching.",
+        "steps": ["Try each problem alone for 5-10 minutes before looking at the answer.",
+                  "Keep an 'error log' of your mistakes and why you made them.",
+                  "Redo the problems you got wrong after 2-3 days."],
+    },
+    "Timed Mock Exams": {
+        "info": "Practice with past papers under real exam conditions (time limit, no notes).",
+        "steps": ["Find 2-3 past papers or sample tests.",
+                  "Set a timer and finish the paper without any help.",
+                  "Mark it honestly and study only the questions you lost marks on."],
+    },
+    "Feynman Technique": {
+        "info": "Explain the topic in simple words, as if teaching a child. Where you get stuck is what you don't understand yet.",
+        "steps": ["Write the topic at the top of a blank page.",
+                  "Explain it in plain language without looking at your notes.",
+                  "Go back to the book for the parts you couldn't explain, then repeat."],
+    },
+    "Mind Maps": {
+        "info": "Draw the topic like a tree: main idea in the center, branches for sub-topics. Shows how ideas connect.",
+        "steps": ["Write the main topic in the center of a page.",
+                  "Add a branch for each sub-topic, then small branches for details.",
+                  "Use colors and drawings, then redraw it from memory."],
+    },
+    "Cornell Notes": {
+        "info": "A note layout with a notes column, a question column and a summary box.",
+        "steps": ["Draw a line: left 1/3 for questions, right 2/3 for notes, a box at the bottom.",
+                  "Write notes on the right and questions on the left.",
+                  "Cover the notes and answer the questions to test yourself."],
+    },
+    "Outline and Practice Essays": {
+        "info": "Plan the structure first, then write timed practice paragraphs or essays.",
+        "steps": ["Write a 5-point outline (intro, 3 main points, conclusion).",
+                  "Write an essay or a few paragraphs in a fixed time.",
+                  "Compare with a model answer and fix weak arguments."],
+    },
+    "Record and Listen": {
+        "info": "Say your notes out loud, record them and listen back. Great if you learn by hearing.",
+        "steps": ["Read your summary aloud into a voice recorder.",
+                  "Listen while walking or travelling.",
+                  "Pause and try to say the next sentence before it plays."],
+    },
+    "Study Group Discussion": {
+        "info": "Study with friends: explain topics to each other and quiz one another.",
+        "steps": ["Pick 3-4 people and choose one topic per session.",
+                  "Take turns explaining a sub-topic to the group.",
+                  "Finish with 10 minutes of quick quiz questions."],
+    },
+    "Learn by Doing": {
+        "info": "Turn the material into something you can do: experiments, mini-projects, examples.",
+        "steps": ["For each topic ask: 'What could I build or try with this?'",
+                  "Do a small experiment, project or demo.",
+                  "Write down what worked and what didn't."],
+    },
+    "Pomodoro Technique": {
+        "info": "Study in short focused sprints with short breaks. Easy on your attention.",
+        "steps": ["Set a timer for 25 minutes (or 15 if that is too long for you).",
+                  "Work on one task only until the timer rings.",
+                  "Take a 5-minute break. After 4 rounds take a 20-minute break."],
+    },
+    "Study Planner (Time Blocking)": {
+        "info": "Schedule fixed study blocks in your calendar so you don't have to decide when to start.",
+        "steps": ["List all topics and your exam date.",
+                  "Give each topic a fixed time slot each day.",
+                  "Feeling lazy? Start with just 10 minutes. Starting is the hardest part."],
+    },
+    "Last-Minute Priority Plan": {
+        "info": "With very little time, don't try to cover everything. Focus on the most important topics.",
+        "steps": ["List topics and mark the ones most likely to appear in the exam.",
+                  "Study the top 30% of topics first using active recall.",
+                  "Sleep well the night before. A tired brain remembers less."],
+    },
+    "Relaxation + Exam Rehearsal": {
+        "info": "Reduce nerves by making the exam feel familiar and by calming your body first.",
+        "steps": ["Do practice tests in a similar setting (desk, timer, silence).",
+                  "Before you start, breathe in for 4 seconds and out for 6 seconds, 5 times.",
+                  "Tell yourself 'I have done this before', because in practice you have."],
+    },
+    "Mnemonics (Memory Tricks)": {
+        "info": "Turn hard facts into a rhyme, acronym or funny picture so they are easier to remember.",
+        "steps": ["Make an acronym from the first letters of a list (like ROYGBIV for rainbow colors).",
+                  "Or link each fact to a silly, vivid image in your mind.",
+                  "Say your trick out loud and test yourself the next day."],
+    },
+    "Clean Up Your Notes": {
+        "info": "Messy notes slow you down. Rewrite them into short, clear summaries before studying.",
+        "steps": ["Read your notes and cross out anything that is not important.",
+                  "Rewrite each topic as 3-5 short bullet points.",
+                  "Use this clean version for flashcards and revision."],
+    },
+    "SQ3R Reading Method": {
+        "info": "A way to study a textbook actively: Survey, Question, Read, Recite, Review.",
+        "steps": ["Survey: skim the headings and summary of the chapter first.",
+                  "Question: turn each heading into a question, then Read to answer it.",
+                  "Recite the answers in your own words, then Review at the end."],
+    },
+    "Practice Quizzes (Multiple Choice)": {
+        "info": "Answer many multiple-choice questions to get used to the style and spot tricky options.",
+        "steps": ["Find or make 20-30 multiple-choice questions per topic.",
+                  "Cover the options and try to answer before looking.",
+                  "For every wrong answer, write down why the right option is right."],
+    },
+    "Oral Practice (Speak Out Loud)": {
+        "info": "Practice saying answers or sentences aloud. Speaking is a skill you only build by speaking.",
+        "steps": ["Pick a topic and explain it out loud for 2 minutes.",
+                  "Record yourself or practice with a friend.",
+                  "Listen back and fix mistakes and long pauses."],
+    },
+    "Distraction-Free Setup": {
+        "info": "Remove the things that pull your attention away before you start studying.",
+        "steps": ["Put your phone in another room or turn on Do Not Disturb.",
+                  "If it is noisy, use earplugs or headphones with calm music.",
+                  "Clear your desk. Keep only what you need for this session."],
+    },
+    "Beginner Step-by-Step Path": {
+        "info": "If the topic is new, start with the basics and build up slowly instead of jumping to hard parts.",
+        "steps": ["List the topics from easiest to hardest.",
+                  "Read or watch a beginner summary of each one.",
+                  "Move to the next topic only when you can explain the current one."],
+    },
+    "Deep Work Sessions": {
+        "info": "Long, uninterrupted blocks (45-90 minutes) for hard topics. Best when you can concentrate for a long time.",
+        "steps": ["Choose one hard topic and one clear goal.",
+                  "Work for 45-90 minutes with no phone and no extra tabs.",
+                  "Then take a proper 15-minute break."],
+    },
+    "Goals and Rewards": {
+        "info": "Set small daily goals and reward yourself when you finish them. It builds the habit of starting.",
+        "steps": ["Write 2-3 small goals for today (like 'finish 10 questions').",
+                  "Choose a reward (tea, a short video, a walk) for after you finish.",
+                  "Tick the goals off on paper and watch your streak grow."],
+    },
+}
+
+
+# =====================================================================
+# PART 2: THE QUESTIONS
+# Each answer is saved in a variable (subject, time_left, style, ...)
+# =====================================================================
+st.title("📚 Study Method Finder")
+st.write("Answer 13 quick questions. The expert system will check its rules and recommend how you should study.")
+
+with st.form("questions"):
+
+    st.subheader("About your subject")
+    subject = st.selectbox("1. What kind of subject are you studying?",
+                           ["Memorization", "Problem solving", "Concepts and theory", "Writing", "Language learning"])
+    exam = st.selectbox("2. What kind of exam will you have?",
+                        ["Multiple choice", "Written answers", "Practical or lab", "Oral exam"])
+    level = st.selectbox("3. How well do you know this subject right now?",
+                         ["Beginner", "Intermediate", "Advanced"])
+    notes = st.selectbox("4. What do your study materials look like?",
+                         ["I have good notes", "My notes are messy", "I only have a textbook"])
+
+    st.subheader("About your time")
+    time_left = st.selectbox("5. How much time until your exam or deadline?",
+                             ["1-2 days", "Less than 1 week", "1-4 weeks", "More than 1 month"])
+    hours = st.selectbox("6. How many hours can you study per day?",
+                         ["Less than 1 hour", "1 to 3 hours", "More than 3 hours"])
+    best_time = st.selectbox("7. When do you have the most energy?",
+                             ["Morning", "Afternoon", "Night"])
+
+    st.subheader("About you")
+    style = st.selectbox("8. How do you learn best?",
+                         ["Visual", "Auditory", "Reading and writing", "Hands-on"])
+    struggle = st.selectbox("9. What is your biggest struggle?",
+                            ["Getting distracted", "Forgetting quickly", "Not understanding", "Procrastinating", "Exam nerves"])
+    focus = st.selectbox("10. How long can you concentrate without a break?",
+                         ["Under 15 minutes", "15 to 30 minutes", "More than 30 minutes"])
+    phone = st.selectbox("11. Does your phone distract you while studying?",
+                         ["Yes, a lot", "Sometimes", "Rarely"])
+    place = st.selectbox("12. Where do you usually study?",
+                         ["Quiet room", "Library", "Noisy home", "On the go (bus, travel)"])
+    company = st.selectbox("13. Do you prefer to study...",
+                           ["Alone", "With other people"])
+
+    submitted = st.form_submit_button("Find my study methods", type="primary")
+
+
+# =====================================================================
+# PART 3: THE RULES  (55 IF rules - this is the "expert" knowledge)
+# Every rule that is true calls add(method, points, reason).
+# More points = stronger recommendation.
+# =====================================================================
+if submitted:
+
+    scores = {}    # method name -> total points
+    reasons = {}   # method name -> list of reasons
+
+    def add(method, points, reason):
+        """Give points to a method and remember why."""
+        scores[method] = scores.get(method, 0) + points
+        reasons.setdefault(method, []).append(f"{reason} (+{points})")
+
+    # A shortcut we reuse in a few rules
+    short_time = time_left in ["1-2 days", "Less than 1 week"]
+
+    # ---------- Rules about the SUBJECT ----------
+    if subject == "Memorization" and time_left == "More than 1 month":
+        add("Spaced Repetition", 3, "You have lots of time, and memorizing works best when spread out")
+
+    if subject == "Memorization" and time_left == "1-4 weeks":
+        add("Spaced Repetition", 2, "A few weeks is enough to benefit from spaced review")
+
+    if subject == "Memorization":
+        add("Active Recall (Flashcards)", 3, "Memorization improves most when you test yourself")
+
+    if subject == "Memorization":
+        add("Mnemonics (Memory Tricks)", 2, "Memory tricks make facts easier to remember")
+
+    if subject == "Problem solving":
+        add("Practice Problems", 3, "Problem-solving skill only comes from solving problems")
+
+    if subject == "Problem solving" and short_time:
+        add("Timed Mock Exams", 3, "Your exam is close, so practice under exam conditions")
+
+    if subject == "Concepts and theory":
+        add("Feynman Technique", 3, "Concept subjects need real understanding, and explaining simply tests that")
+
+    if subject == "Concepts and theory" and style == "Visual":
+        add("Mind Maps", 3, "Mind maps show how concepts connect, and you learn visually")
+
+    if subject == "Concepts and theory" and style == "Reading and writing":
+        add("Cornell Notes", 2, "You like reading and writing, and Cornell notes turn notes into self-tests")
+
+    if subject == "Concepts and theory" and company == "With other people":
+        add("Study Group Discussion", 2, "Discussing concepts with others shows gaps in your understanding")
+
+    if subject == "Writing":
+        add("Outline and Practice Essays", 3, "Writing improves by planning and practicing writing")
+
+    if subject == "Language learning":
+        add("Spaced Repetition", 3, "Vocabulary sticks best with spaced review")
+
+    if subject == "Language learning":
+        add("Oral Practice (Speak Out Loud)", 3, "A language is learned by speaking it")
+
+    if subject == "Language learning" and style == "Auditory":
+        add("Record and Listen", 2, "You learn by hearing, which is perfect for languages")
+
+    # ---------- Rules about TIME LEFT ----------
+    if time_left == "1-2 days":
+        add("Last-Minute Priority Plan", 3, "With only 1-2 days, you must pick the most important topics")
+
+    if short_time:
+        add("Active Recall (Flashcards)", 2, "When time is short, testing yourself is the fastest way to learn")
+
+    if time_left == "1-4 weeks":
+        add("Study Planner (Time Blocking)", 2, "A few weeks need a clear plan")
+
+    if time_left == "More than 1 month":
+        add("Study Planner (Time Blocking)", 1, "A long runway needs a plan so you don't waste it")
+
+    # ---------- Rules about LEARNING STYLE ----------
+    if style == "Visual":
+        add("Mind Maps", 1, "Visual learners usually like diagrams and colors")
+
+    if style == "Auditory":
+        add("Record and Listen", 2, "You learn by hearing, so listen to your own recorded notes")
+
+    if style == "Auditory" and company == "With other people":
+        add("Study Group Discussion", 2, "You learn by hearing and talking, and groups are perfect for that")
+
+    if style == "Reading and writing":
+        add("Cornell Notes", 1, "You like reading and writing, so structured notes suit you")
+
+    if style == "Hands-on":
+        add("Learn by Doing", 2, "You learn best by doing, so turn topics into practice tasks")
+
+    # ---------- Rules about your BIGGEST STRUGGLE ----------
+    if struggle == "Getting distracted":
+        add("Pomodoro Technique", 3, "Short focused sprints help when your attention drifts")
+
+    if struggle == "Forgetting quickly":
+        add("Active Recall (Flashcards)", 2, "Forgetting is fixed by pulling information out again and again")
+
+    if struggle == "Forgetting quickly":
+        add("Spaced Repetition", 2, "Reviewing at growing gaps fights forgetting")
+
+    if struggle == "Not understanding":
+        add("Feynman Technique", 2, "Explaining simply shows exactly which part you don't understand")
+
+    if struggle == "Not understanding" and level == "Beginner":
+        add("Beginner Step-by-Step Path", 3, "You are new to this, so build up from the basics")
+
+    if struggle == "Procrastinating":
+        add("Study Planner (Time Blocking)", 3, "Fixed time slots remove the 'when should I start?' decision")
+
+    if struggle == "Procrastinating":
+        add("Goals and Rewards", 2, "Small goals with rewards make starting easier")
+
+    if struggle == "Exam nerves":
+        add("Relaxation + Exam Rehearsal", 3, "Practicing in exam-like conditions makes the real exam feel familiar")
+
+    if struggle == "Exam nerves":
+        add("Timed Mock Exams", 2, "Mock exams build confidence")
+
+    # ---------- Rules about STUDYING ALONE or WITH OTHERS ----------
+    if company == "With other people":
+        add("Study Group Discussion", 1, "You said you like studying with other people")
+
+    # ---------- Rules about HOURS PER DAY ----------
+    if hours == "Less than 1 hour":
+        add("Active Recall (Flashcards)", 2, "With little time per day, testing yourself is the most efficient method")
+
+    if hours == "More than 3 hours":
+        add("Pomodoro Technique", 2, "Long study days need regular breaks to avoid burnout")
+
+    # ---------- Rules about BEST TIME OF DAY ----------
+    if best_time == "Morning" and subject == "Problem solving":
+        add("Practice Problems", 1, "Hard problems are best solved when your mind is fresh in the morning")
+
+    if best_time == "Night" and subject == "Memorization":
+        add("Spaced Repetition", 1, "Reviewing before sleep helps memory")
+
+    if best_time == "Afternoon":
+        add("Pomodoro Technique", 1, "Short sprints help during the afternoon energy dip")
+
+    # ---------- Rules about CONCENTRATION SPAN ----------
+    if focus == "Under 15 minutes":
+        add("Pomodoro Technique", 3, "You focus for a short time, so use short sprints (try 15 minutes)")
+
+    if focus == "15 to 30 minutes":
+        add("Pomodoro Technique", 2, "Your focus time fits the 25-minute sprint very well")
+
+    if focus == "More than 30 minutes":
+        add("Deep Work Sessions", 2, "You can focus for a long time, so use long blocks")
+
+    # ---------- Rules about STUDY PLACE ----------
+    if place == "Noisy home":
+        add("Distraction-Free Setup", 3, "A noisy place needs a setup that blocks distractions")
+
+    if place == "Library":
+        add("Deep Work Sessions", 1, "A library is a great place for long, focused sessions")
+
+    if place == "On the go (bus, travel)":
+        add("Record and Listen", 2, "Audio is easy to study while travelling")
+
+    # ---------- Rules about PHONE DISTRACTION ----------
+    if phone == "Yes, a lot":
+        add("Distraction-Free Setup", 3, "Your phone is a big distraction, so remove it from the room")
+
+    if phone == "Yes, a lot":
+        add("Pomodoro Technique", 2, "A timer gives you a clear phone-free period")
+
+    # ---------- Rules about your LEVEL ----------
+    if level == "Beginner":
+        add("Beginner Step-by-Step Path", 3, "As a beginner, start with the basics and build up")
+
+    if level == "Advanced":
+        add("Timed Mock Exams", 2, "You know the subject well, so test yourself with real exam practice")
+
+    # ---------- Rules about the EXAM TYPE ----------
+    if exam == "Multiple choice":
+        add("Practice Quizzes (Multiple Choice)", 3, "Practice with the same question style as your exam")
+
+    if exam == "Written answers":
+        add("Outline and Practice Essays", 2, "Written exams need practice writing answers")
+
+    if exam == "Practical or lab":
+        add("Learn by Doing", 3, "A practical exam tests what you can do, so practice doing it")
+
+    if exam == "Oral exam":
+        add("Oral Practice (Speak Out Loud)", 3, "An oral exam needs practice speaking your answers")
+
+    # ---------- Rules about your NOTES ----------
+    if notes == "My notes are messy":
+        add("Clean Up Your Notes", 3, "Clean notes make every other method easier")
+
+    if notes == "I only have a textbook":
+        add("SQ3R Reading Method", 3, "A textbook needs an active reading method")
+
+    if notes == "I have good notes":
+        add("Active Recall (Flashcards)", 1, "Good notes can be turned into questions and flashcards")
+
+
+    # =================================================================
+    # PART 4: SHOW THE RESULT
+    # Sort the methods by points and show the best 3.
+    # =================================================================
+    ranked = sorted(scores, key=scores.get, reverse=True)
+    best_score = scores[ranked[0]]
+    rules_fired = sum(len(r) for r in reasons.values())
+
+    st.divider()
+    st.header("Your top 3 study methods")
+    st.caption(f"{rules_fired} of the 55 rules matched your answers.")
+
+    for place_number, method in enumerate(ranked[:3], start=1):
+        st.subheader(f"{place_number}. {method}")
+        st.progress(scores[method] / best_score, text=f"Total points: {scores[method]}")
+        st.write(METHODS[method]["info"])
+
+        with st.expander("How to do it"):
+            for number, step in enumerate(METHODS[method]["steps"], start=1):
+                st.write(f"**{number}.** {step}")
+
+        with st.expander("Why was this recommended?"):
+            for reason in reasons[method]:
+                st.write("• " + reason)
+
+    if len(ranked) > 3:
+        st.write("**Also worth trying:** " + ", ".join(ranked[3:8]))
