@@ -2,47 +2,35 @@
 study_expert.py  -  THE BRAIN of the Study Method Finder
 =========================================================
 
-This is a RULE-BASED EXPERT SYSTEM and DECISION SUPPORT SYSTEM (DSS).
-It has NO screen code. It only contains the "expert knowledge".
+This is a RULE-BASED EXPERT SYSTEM and a DECISION SUPPORT SYSTEM (DSS).
+It has NO screen code. The screen is in app.py.
 
-    KNOWLEDGE BASE      METHODS, OPTIONS and the 55 IF-THEN rules (+ 7 diagnosis rules)
-    INFERENCE ENGINE    infer_facts() and find_methods()  (forward chaining)
-    DIAGNOSIS           diagnose()  finds the student's study problems from symptoms
-    DECISION MAKING     make_decision()  chooses the best study methods
-    DECISION SUPPORT    make_decision()  explains WHY, so the student decides
+THE FOUR IDEAS IN THIS FILE
+    1. INFERENCING      infer_facts()     works out NEW facts from the answers
+    2. DIAGNOSIS        diagnose()        finds the student's study problems
+    3. DECISION MAKING  find_methods()    scores the methods with 55 IF-THEN rules
+    4. DECISION SUPPORT make_decision()   gives the best methods AND explains why,
+                                          so the student makes the final choice
 
-HOW IT WORKS (in plain words)
-    1. The user answers 13 questions. Each answer is a "fact".
-    2. INFERENCING: we derive new facts from the answers
-       (example: "exam in 1-2 days"  ->  "urgent = True").
-    3. DIAGNOSIS: we look at the symptoms and find the student's problems
-       (example: phone distraction + short focus  ->  "Attention problem").
-    4. We check 55 IF-THEN rules. A rule looks like this:
-          IF the subject is Memorization
-          THEN give 3 points to "Active Recall"
-    5. DECISION MAKING: methods with the most points are the best advice.
-    6. DECISION SUPPORT: the system shows the diagnosis, the reasons and a
-       confidence level. It supports the student's decision, it does not
-       force it.
+HOW IT WORKS (forward chaining)
+    answers  ->  infer_facts  ->  diagnose  ->  find_methods  ->  make_decision
 
-    answers -> infer_facts -> diagnose -> find_methods -> make_decision
+    A RULE looks like this:
+        IF the subject is Memorization  THEN give 3 points to "Active Recall"
+    Every rule that is true adds points to a study method.
+    The methods with the most points are the best advice.
 
-The screen (buttons, questions, results) is in app.py.
+The file has 3 parts:   PART 1 knowledge (data)
+                        PART 2 rules (data)
+                        PART 3 engine (the code that uses the data)
+
 To test only this file, run:   python study_expert.py
 """
 
-import re
-
-# Facts about this rule base (used on the screen)
-TOTAL_RULES = 55
-TOTAL_CONDITIONS = 66      # 55 rules, and 11 of them test two things at once
-TOTAL_DIAGNOSIS_RULES = 7  # 7 diagnosis rules used by diagnose()
-
 
 # =====================================================================
-# PART 1: THE STUDY METHODS
-# Each method has:  "info"  = a short explanation
-#                   "steps" = 3 steps that tell the user how to do it
+# PART 1: KNOWLEDGE  -  the study methods and the answer choices
+# Each method has "info" (what it is) and "steps" (how to do it).
 # =====================================================================
 METHODS = {
     "Spaced Repetition": {
@@ -191,12 +179,7 @@ METHODS = {
     },
 }
 
-
-# =====================================================================
-# PART 2: THE ANSWER CHOICES
-# For each question, the list of answers the user can pick from.
-# The rules in PART 3 use these exact words.
-# =====================================================================
+# For each question, the answers the user can pick. The rules use these exact words.
 OPTIONS = {
     "subject":   ["Memorization", "Problem solving", "Concepts and theory", "Writing", "Language learning"],
     "exam":      ["Multiple choice", "Written answers", "Practical or lab", "Oral exam"],
@@ -215,510 +198,366 @@ OPTIONS = {
 
 
 # =====================================================================
-# PART 3: INFERENCING (derive NEW facts from the answers)
+# PART 2: RULES  -  the 55 recommendation rules and the 7 diagnosis rules
 #
-# This is the first step of forward chaining. The answers are the
-# "given facts". Here we INFER extra facts that the user never typed.
-# The diagnosis step below uses these inferred facts.
+# A recommendation rule has 5 parts:
+#     (rule number,  IF conditions,  THEN method,  points,  reason)
 #
-#     IF time_left is "1-2 days"        THEN urgent = True
-#     IF phone is "Yes, a lot"          THEN attention_risk = True
-#     ... and so on
+# "IF conditions" is a small dictionary. The rule is true when ALL of its
+# conditions are true:   {"subject": "Memorization", "time_left": "1-4 weeks"}
+#                        means: subject is Memorization AND time_left is 1-4 weeks.
+#
+# "points" says how strongly the rule recommends the method (1 weak ... 3 strong).
+#
+# Conditions can also use the INFERRED facts made by infer_facts() below,
+# for example "short_time": True.
 # =====================================================================
+RULES = [
+    # ----- about the SUBJECT (rules 1-14) -----
+    (1,  {"subject": "Memorization", "time_left": "More than 1 month"}, "Spaced Repetition", 3,
+         "You have lots of time, and memorizing works best when spread out"),
+    (2,  {"subject": "Memorization", "time_left": "1-4 weeks"}, "Spaced Repetition", 2,
+         "A few weeks is enough to benefit from spaced review"),
+    (3,  {"subject": "Memorization"}, "Active Recall (Flashcards)", 3,
+         "Memorization improves most when you test yourself"),
+    (4,  {"subject": "Memorization"}, "Mnemonics (Memory Tricks)", 2,
+         "Memory tricks make facts easier to remember"),
+    (5,  {"subject": "Problem solving"}, "Practice Problems", 3,
+         "Problem-solving skill only comes from solving problems"),
+    (6,  {"subject": "Problem solving", "short_time": True}, "Timed Mock Exams", 3,
+         "Your exam is close, so practice under exam conditions"),
+    (7,  {"subject": "Concepts and theory"}, "Feynman Technique", 3,
+         "Concept subjects need real understanding, and explaining simply tests that"),
+    (8,  {"subject": "Concepts and theory", "style": "Visual"}, "Mind Maps", 3,
+         "Mind maps show how concepts connect, and you learn visually"),
+    (9,  {"subject": "Concepts and theory", "style": "Reading and writing"}, "Cornell Notes", 2,
+         "You like reading and writing, and Cornell notes turn notes into self-tests"),
+    (10, {"subject": "Concepts and theory", "company": "With other people"}, "Study Group Discussion", 2,
+         "Discussing concepts with others shows gaps in your understanding"),
+    (11, {"subject": "Writing"}, "Outline and Practice Essays", 3,
+         "Writing improves by planning and practicing writing"),
+    (12, {"subject": "Language learning"}, "Spaced Repetition", 3,
+         "Vocabulary sticks best with spaced review"),
+    (13, {"subject": "Language learning"}, "Oral Practice (Speak Out Loud)", 3,
+         "A language is learned by speaking it"),
+    (14, {"subject": "Language learning", "style": "Auditory"}, "Record and Listen", 2,
+         "You learn by hearing, which is perfect for languages"),
+
+    # ----- about TIME LEFT (rules 15-18) -----
+    (15, {"time_left": "1-2 days"}, "Last-Minute Priority Plan", 3,
+         "With only 1-2 days, you must pick the most important topics"),
+    (16, {"short_time": True}, "Active Recall (Flashcards)", 2,
+         "When time is short, testing yourself is the fastest way to learn"),
+    (17, {"time_left": "1-4 weeks"}, "Study Planner (Time Blocking)", 2,
+         "A few weeks need a clear plan"),
+    (18, {"time_left": "More than 1 month"}, "Study Planner (Time Blocking)", 1,
+         "A long runway needs a plan so you don't waste it"),
+
+    # ----- about LEARNING STYLE (rules 19-23) -----
+    (19, {"style": "Visual"}, "Mind Maps", 1,
+         "Visual learners usually like diagrams and colors"),
+    (20, {"style": "Auditory"}, "Record and Listen", 2,
+         "You learn by hearing, so listen to your own recorded notes"),
+    (21, {"style": "Auditory", "company": "With other people"}, "Study Group Discussion", 2,
+         "You learn by hearing and talking, and groups are perfect for that"),
+    (22, {"style": "Reading and writing"}, "Cornell Notes", 1,
+         "You like reading and writing, so structured notes suit you"),
+    (23, {"style": "Hands-on"}, "Learn by Doing", 2,
+         "You learn best by doing, so turn topics into practice tasks"),
+
+    # ----- about the BIGGEST STRUGGLE (rules 24-32) -----
+    (24, {"struggle": "Getting distracted"}, "Pomodoro Technique", 3,
+         "Short focused sprints help when your attention drifts"),
+    (25, {"struggle": "Forgetting quickly"}, "Active Recall (Flashcards)", 2,
+         "Forgetting is fixed by pulling information out again and again"),
+    (26, {"struggle": "Forgetting quickly"}, "Spaced Repetition", 2,
+         "Reviewing at growing gaps fights forgetting"),
+    (27, {"struggle": "Not understanding"}, "Feynman Technique", 2,
+         "Explaining simply shows exactly which part you don't understand"),
+    (28, {"struggle": "Not understanding", "level": "Beginner"}, "Beginner Step-by-Step Path", 3,
+         "You are new to this, so build up from the basics"),
+    (29, {"struggle": "Procrastinating"}, "Study Planner (Time Blocking)", 3,
+         "Fixed time slots remove the 'when should I start?' decision"),
+    (30, {"struggle": "Procrastinating"}, "Goals and Rewards", 2,
+         "Small goals with rewards make starting easier"),
+    (31, {"struggle": "Exam nerves"}, "Relaxation + Exam Rehearsal", 3,
+         "Practicing in exam-like conditions makes the real exam feel familiar"),
+    (32, {"struggle": "Exam nerves"}, "Timed Mock Exams", 2,
+         "Mock exams build confidence"),
+
+    # ----- STUDYING ALONE or WITH OTHERS (rule 33) -----
+    (33, {"company": "With other people"}, "Study Group Discussion", 1,
+         "You said you like studying with other people"),
+
+    # ----- about HOURS PER DAY (rules 34-35) -----
+    (34, {"hours": "Less than 1 hour"}, "Active Recall (Flashcards)", 2,
+         "With little time per day, testing yourself is the most efficient method"),
+    (35, {"hours": "More than 3 hours"}, "Pomodoro Technique", 2,
+         "Long study days need regular breaks to avoid burnout"),
+
+    # ----- about the BEST TIME OF DAY (rules 36-38) -----
+    (36, {"best_time": "Morning", "subject": "Problem solving"}, "Practice Problems", 1,
+         "Hard problems are best solved when your mind is fresh in the morning"),
+    (37, {"best_time": "Night", "subject": "Memorization"}, "Spaced Repetition", 1,
+         "Reviewing before sleep helps memory"),
+    (38, {"best_time": "Afternoon"}, "Pomodoro Technique", 1,
+         "Short sprints help during the afternoon energy dip"),
+
+    # ----- about CONCENTRATION SPAN (rules 39-41) -----
+    (39, {"focus": "Under 15 minutes"}, "Pomodoro Technique", 3,
+         "You focus for a short time, so use short sprints (try 15 minutes)"),
+    (40, {"focus": "15 to 30 minutes"}, "Pomodoro Technique", 2,
+         "Your focus time fits the 25-minute sprint very well"),
+    (41, {"focus": "More than 30 minutes"}, "Deep Work Sessions", 2,
+         "You can focus for a long time, so use long blocks"),
+
+    # ----- about the STUDY PLACE (rules 42-44) -----
+    (42, {"place": "Noisy home"}, "Distraction-Free Setup", 3,
+         "A noisy place needs a setup that blocks distractions"),
+    (43, {"place": "Library"}, "Deep Work Sessions", 1,
+         "A library is a great place for long, focused sessions"),
+    (44, {"place": "On the go (bus, travel)"}, "Record and Listen", 2,
+         "Audio is easy to study while travelling"),
+
+    # ----- about PHONE DISTRACTION (rules 45-46) -----
+    (45, {"phone": "Yes, a lot"}, "Distraction-Free Setup", 3,
+         "Your phone is a big distraction, so remove it from the room"),
+    (46, {"phone": "Yes, a lot"}, "Pomodoro Technique", 2,
+         "A timer gives you a clear phone-free period"),
+
+    # ----- about your LEVEL (rules 47-48) -----
+    (47, {"level": "Beginner"}, "Beginner Step-by-Step Path", 3,
+         "As a beginner, start with the basics and build up"),
+    (48, {"level": "Advanced"}, "Timed Mock Exams", 2,
+         "You know the subject well, so test yourself with real exam practice"),
+
+    # ----- about the EXAM TYPE (rules 49-52) -----
+    (49, {"exam": "Multiple choice"}, "Practice Quizzes (Multiple Choice)", 3,
+         "Practice with the same question style as your exam"),
+    (50, {"exam": "Written answers"}, "Outline and Practice Essays", 2,
+         "Written exams need practice writing answers"),
+    (51, {"exam": "Practical or lab"}, "Learn by Doing", 3,
+         "A practical exam tests what you can do, so practice doing it"),
+    (52, {"exam": "Oral exam"}, "Oral Practice (Speak Out Loud)", 3,
+         "An oral exam needs practice speaking your answers"),
+
+    # ----- about your NOTES (rules 53-55) -----
+    (53, {"notes": "My notes are messy"}, "Clean Up Your Notes", 3,
+         "Clean notes make every other method easier"),
+    (54, {"notes": "I only have a textbook"}, "SQ3R Reading Method", 3,
+         "A textbook needs an active reading method"),
+    (55, {"notes": "I have good notes"}, "Active Recall (Flashcards)", 1,
+         "Good notes can be turned into questions and flashcards"),
+]
+
+
+# A diagnosis rule has 5 parts:
+#     (code,  problem,  likely cause,  treatment methods,  list of symptoms)
+# Each symptom is  (IF conditions, text shown to the user).
+# The problem is diagnosed when at least ONE symptom is true.
+# More symptoms = more severe problem.
+DIAGNOSIS_RULES = [
+    ("D1", "Attention problem",
+     "Your attention is being pulled away by a short focus span, your phone or noise",
+     ["Pomodoro Technique", "Distraction-Free Setup"],
+     [({"struggle": "Getting distracted"}, "You said you get distracted easily"),
+      ({"focus": "Under 15 minutes"}, "You can only focus for under 15 minutes"),
+      ({"phone": "Yes, a lot"}, "Your phone distracts you a lot"),
+      ({"place": "Noisy home"}, "You study in a noisy place")]),
+
+    ("D2", "Memory retention problem",
+     "Information is not being pulled out of memory often enough, so it fades",
+     ["Active Recall (Flashcards)", "Spaced Repetition"],
+     [({"struggle": "Forgetting quickly"}, "You said you forget quickly"),
+      ({"subject": "Memorization", "short_time": True}, "You must memorize a lot in very little time"),
+      ({"low_study_hours": True, "subject": ["Memorization", "Language learning"]},
+       "You have under 1 hour a day for a memory-heavy subject")]),
+
+    ("D3", "Understanding gap",
+     "The topic is being read but not truly understood, so the ideas do not connect",
+     ["Feynman Technique", "Beginner Step-by-Step Path"],
+     [({"struggle": "Not understanding"}, "You said you do not understand the material"),
+      ({"level": "Beginner"}, "You are a beginner in this subject"),
+      ({"notes": "I only have a textbook", "subject": "Concepts and theory"},
+       "You are learning theory from a textbook only")]),
+
+    ("D4", "Motivation and planning problem",
+     "There is no fixed start time or small goal, so starting keeps getting delayed",
+     ["Study Planner (Time Blocking)", "Goals and Rewards"],
+     [({"struggle": "Procrastinating"}, "You said you procrastinate"),
+      ({"plenty_of_time": True, "low_study_hours": True},
+       "You have plenty of time left but study less than 1 hour a day")]),
+
+    ("D5", "Exam anxiety",
+     "The exam feels unfamiliar and high-pressure, which makes you nervous",
+     ["Relaxation + Exam Rehearsal", "Timed Mock Exams"],
+     [({"struggle": "Exam nerves"}, "You said exam nerves are your biggest struggle"),
+      ({"level": "Beginner", "short_time": True}, "You are new to the subject and the exam is close")]),
+
+    ("D6", "Weak study materials",
+     "Messy or missing notes make every study session slower",
+     ["Clean Up Your Notes", "SQ3R Reading Method"],
+     [({"notes": "My notes are messy"}, "Your notes are messy"),
+      ({"notes": "I only have a textbook"}, "You only have a textbook, with no notes")]),
+
+    ("D7", "Time pressure",
+     "There is not enough time to cover everything, so you must prioritize",
+     ["Last-Minute Priority Plan", "Active Recall (Flashcards)"],
+     [({"urgent": True}, "Your exam is in only 1-2 days"),
+      ({"time_left": "Less than 1 week", "low_study_hours": True},
+       "Your exam is within a week and you study under 1 hour a day")]),
+]
+
+# Numbers shown on the screen (counted automatically from the rules above)
+TOTAL_RULES = len(RULES)                                      # 55
+TOTAL_CONDITIONS = sum(len(rule[1]) for rule in RULES)        # 66
+TOTAL_DIAGNOSIS_RULES = len(DIAGNOSIS_RULES)                  # 7
+
+
+# =====================================================================
+# PART 3: THE ENGINE  -  the code that uses the rules above
+# =====================================================================
+
 def infer_facts(answers):
     """
-    answers : dictionary of the user's 13 answers
-
-    returns : dictionary of inferred facts, for example
-              {"urgent": True, "attention_risk": False, ...}
+    INFERENCING: work out NEW facts that the user never typed.
+    Example: the user says "1-2 days"  ->  we infer  urgent = True.
+    These facts are used by the rules and the diagnosis.
     """
-    facts = {}
-
-    # Time facts
-    facts["urgent"] = answers["time_left"] == "1-2 days"
-    facts["short_time"] = answers["time_left"] in ["1-2 days", "Less than 1 week"]
-    facts["plenty_of_time"] = answers["time_left"] == "More than 1 month"
-
-    # Attention facts
-    facts["attention_risk"] = (
-        answers["focus"] == "Under 15 minutes"
-        or answers["phone"] == "Yes, a lot"
-        or answers["place"] == "Noisy home"
-    )
-
-    # Study material facts
-    facts["weak_materials"] = answers["notes"] in ["My notes are messy", "I only have a textbook"]
-
-    # Experience and workload facts
-    facts["beginner"] = answers["level"] == "Beginner"
-    facts["low_study_hours"] = answers["hours"] == "Less than 1 hour"
-
-    # Facts that come from the "biggest struggle" answer
-    facts["memory_problem"] = answers["struggle"] == "Forgetting quickly"
-    facts["understanding_problem"] = answers["struggle"] == "Not understanding"
-    facts["motivation_problem"] = answers["struggle"] == "Procrastinating"
-    facts["anxiety_problem"] = answers["struggle"] == "Exam nerves"
-
-    return facts
+    return {
+        "urgent": answers["time_left"] == "1-2 days",
+        "short_time": answers["time_left"] in ["1-2 days", "Less than 1 week"],
+        "plenty_of_time": answers["time_left"] == "More than 1 month",
+        "low_study_hours": answers["hours"] == "Less than 1 hour",
+        "attention_risk": (answers["focus"] == "Under 15 minutes"
+                           or answers["phone"] == "Yes, a lot"
+                           or answers["place"] == "Noisy home"),
+        "weak_materials": answers["notes"] in ["My notes are messy", "I only have a textbook"],
+    }
 
 
-# =====================================================================
-# PART 4: DIAGNOSIS (find the student's study PROBLEMS from symptoms)
-#
-# Like a doctor: the answers are the SYMPTOMS, the problem is the
-# DIAGNOSIS, and the study methods are the TREATMENT.
-#
-# There are 7 diagnosis rules. Each one has a list of symptoms to check.
-# A problem is diagnosed when at least one symptom is present.
-# More symptoms = more severe problem:
-#       1 symptom = Mild,  2 symptoms = Moderate,  3+ symptoms = Severe
-# =====================================================================
+def conditions_are_true(conditions, facts):
+    """
+    Check one IF part. It is true only when EVERY condition matches.
+    A condition can be one value, or a list of allowed values.
+    """
+    for name, wanted in conditions.items():
+        value = facts[name]
+        if isinstance(wanted, list):
+            if value not in wanted:
+                return False
+        elif value != wanted:
+            return False
+    return True
+
+
 def diagnose(answers):
     """
-    answers : dictionary of the user's 13 answers
+    DIAGNOSIS: the answers are SYMPTOMS, the problem is the DIAGNOSIS and the
+    study methods are the TREATMENT (like a doctor).
 
-    returns : a list of diagnoses, most severe first. Each item looks like:
-              {"problem": "Attention problem",
-               "cause": "...",
-               "symptoms": ["You get distracted easily", ...],
-               "severity": "Moderate",
-               "treatment": ["Pomodoro Technique", "Distraction-Free Setup"]}
+    Severity depends on how many symptoms were found:
+        1 = Mild,  2 = Moderate,  3 or more = Severe
+
+    Returns a list of problems, the most severe first.
     """
-    facts = infer_facts(answers)
-    findings = []
+    facts = {**answers, **infer_facts(answers)}
+    found = []
 
-    def check(rule_name, problem, cause, tests, treatment):
-        """Collect the symptoms that are TRUE. If there is any, record a diagnosis."""
-        symptoms = [text for condition, text in tests if condition]
+    for code, problem, cause, treatment, symptom_rules in DIAGNOSIS_RULES:
+        symptoms = [text for conditions, text in symptom_rules
+                    if conditions_are_true(conditions, facts)]
         if symptoms:
-            if len(symptoms) == 1:
-                severity = "Mild"
-            elif len(symptoms) == 2:
-                severity = "Moderate"
-            else:
-                severity = "Severe"
-            findings.append({
-                "rule": rule_name,
-                "problem": problem,
-                "cause": cause,
-                "symptoms": symptoms,
-                "severity": severity,
-                "treatment": treatment,
-            })
+            severity = {1: "Mild", 2: "Moderate"}.get(len(symptoms), "Severe")
+            found.append({"rule": code, "problem": problem, "cause": cause,
+                          "symptoms": symptoms, "severity": severity,
+                          "treatment": treatment})
 
-    # D1: Attention problem
-    check("D1", "Attention problem",
-          "Your attention is being pulled away by a short focus span, your phone or noise",
-          [(answers["struggle"] == "Getting distracted", "You said you get distracted easily"),
-           (answers["focus"] == "Under 15 minutes", "You can only focus for under 15 minutes"),
-           (answers["phone"] == "Yes, a lot", "Your phone distracts you a lot"),
-           (answers["place"] == "Noisy home", "You study in a noisy place")],
-          ["Pomodoro Technique", "Distraction-Free Setup"])
+    if not found:
+        found.append({"rule": "D0", "problem": "No major problem found",
+                      "cause": "Your answers show no strong warning signs",
+                      "symptoms": [], "severity": "None", "treatment": []})
 
-    # D2: Memory retention problem
-    check("D2", "Memory retention problem",
-          "Information is not being pulled out of memory often enough, so it fades",
-          [(facts["memory_problem"], "You said you forget quickly"),
-           (answers["subject"] == "Memorization" and facts["short_time"],
-            "You must memorize a lot in very little time"),
-           (facts["low_study_hours"] and answers["subject"] in ["Memorization", "Language learning"],
-            "You have under 1 hour a day for a memory-heavy subject")],
-          ["Active Recall (Flashcards)", "Spaced Repetition"])
-
-    # D3: Understanding gap
-    check("D3", "Understanding gap",
-          "The topic is being read but not truly understood, so the ideas do not connect",
-          [(facts["understanding_problem"], "You said you do not understand the material"),
-           (facts["beginner"], "You are a beginner in this subject"),
-           (answers["notes"] == "I only have a textbook" and answers["subject"] == "Concepts and theory",
-            "You are learning theory from a textbook only")],
-          ["Feynman Technique", "Beginner Step-by-Step Path"])
-
-    # D4: Motivation and planning problem
-    check("D4", "Motivation and planning problem",
-          "There is no fixed start time or small goal, so starting keeps getting delayed",
-          [(facts["motivation_problem"], "You said you procrastinate"),
-           (facts["plenty_of_time"] and facts["low_study_hours"],
-            "You have plenty of time left but study less than 1 hour a day")],
-          ["Study Planner (Time Blocking)", "Goals and Rewards"])
-
-    # D5: Exam anxiety
-    check("D5", "Exam anxiety",
-          "The exam feels unfamiliar and high-pressure, which makes you nervous",
-          [(facts["anxiety_problem"], "You said exam nerves are your biggest struggle"),
-           (facts["beginner"] and facts["short_time"],
-            "You are new to the subject and the exam is close")],
-          ["Relaxation + Exam Rehearsal", "Timed Mock Exams"])
-
-    # D6: Weak study materials
-    check("D6", "Weak study materials",
-          "Messy or missing notes make every study session slower",
-          [(answers["notes"] == "My notes are messy", "Your notes are messy"),
-           (answers["notes"] == "I only have a textbook", "You only have a textbook, with no notes")],
-          ["Clean Up Your Notes", "SQ3R Reading Method"])
-
-    # D7: Time pressure
-    check("D7", "Time pressure",
-          "There is not enough time to cover everything, so you must prioritize",
-          [(facts["urgent"], "Your exam is in only 1-2 days"),
-           (answers["time_left"] == "Less than 1 week" and facts["low_study_hours"],
-            "Your exam is within a week and you study under 1 hour a day")],
-          ["Last-Minute Priority Plan", "Active Recall (Flashcards)"])
-
-    # No problem found at all
-    if not findings:
-        findings.append({
-            "rule": "D0",
-            "problem": "No major problem found",
-            "cause": "Your answers show no strong warning signs",
-            "symptoms": [],
-            "severity": "None",
-            "treatment": [],
-        })
-
-    # Most severe first (more symptoms = more severe)
-    findings.sort(key=lambda item: len(item["symptoms"]), reverse=True)
-    return findings
+    found.sort(key=lambda item: len(item["symptoms"]), reverse=True)
+    return found
 
 
-# =====================================================================
-# PART 5: THE RULES AND THE ENGINE
-#
-# find_methods() takes the user's answers and returns the study methods
-# sorted from best to worst.
-#
-# Every rule has this shape:
-#
-#     if <condition>:
-#         add(rule number, method, points, reason)
-#
-# "points" = how strongly the rule recommends the method (1 = weak, 3 = strong)
-# =====================================================================
 def find_methods(answers):
     """
-    answers : a dictionary like {"subject": "Writing", "exam": "Oral exam", ...}
+    DECISION MAKING: check all 55 rules. Every rule that is true gives points
+    to a study method. Then sort the methods, most points first.
 
-    returns : a list, best method first. Each item looks like:
-              {"method": "Pomodoro Technique",
-               "score": 8,
-               "reasons": ["Rule 24 (+3): Short focused sprints help ..."]}
+    Returns a list like:
+        [{"method": "Pomodoro Technique", "score": 8,
+          "reasons": ["Rule 24 (+3): Short focused sprints help ..."]}, ...]
     """
+    facts = {**answers, **infer_facts(answers)}
+    scores = {}     # method name -> total points
+    reasons = {}    # method name -> list of reasons
+
+    for number, conditions, method, points, why in RULES:
+        if conditions_are_true(conditions, facts):
+            scores[method] = scores.get(method, 0) + points
+            reasons.setdefault(method, []).append(f"Rule {number} (+{points}): {why}")
+
+    best_first = sorted(scores, key=scores.get, reverse=True)
+    return [{"method": name, "score": scores[name], "reasons": reasons[name]}
+            for name in best_first]
+
+
+def get_confidence(ranking):
+    """DECISION SUPPORT: how sure are we? Based on the best score and its lead."""
+    if not ranking:
+        return "Low"
+    best = ranking[0]["score"]
+    second = ranking[1]["score"] if len(ranking) > 1 else 0
+    if best >= 8 or (best >= 6 and best - second >= 2):
+        return "High"
+    if best >= 5:
+        return "Medium"
+    return "Low"
 
-    # ----- Step 1: read the answers into simple variables -----
-    subject = answers["subject"]
-    exam = answers["exam"]
-    level = answers["level"]
-    notes = answers["notes"]
-    time_left = answers["time_left"]
-    hours = answers["hours"]
-    best_time = answers["best_time"]
-    style = answers["style"]
-    struggle = answers["struggle"]
-    focus = answers["focus"]
-    phone = answers["phone"]
-    place = answers["place"]
-    company = answers["company"]
 
-    # ----- Step 2: two notebooks to remember what happened -----
-    scores = {}    # method name -> total points so far
-    reasons = {}   # method name -> list of reasons so far
-
-    def add(rule_number, method, points, why):
-        """Called by a rule that is TRUE: give points to a method and remember why."""
-        if method not in scores:        # first time we see this method
-            scores[method] = 0
-            reasons[method] = []
-        scores[method] = scores[method] + points
-        reasons[method].append(f"Rule {rule_number} (+{points}): {why}")
-
-    # A shortcut used by two rules: True when the exam is close
-    short_time = time_left in ["1-2 days", "Less than 1 week"]
-
-    # ----- Step 3: the 55 rules -----
-
-    # ---------- Rules about the SUBJECT (rules 1-14) ----------
-    if subject == "Memorization" and time_left == "More than 1 month":
-        add(1, "Spaced Repetition", 3, "You have lots of time, and memorizing works best when spread out")
-
-    if subject == "Memorization" and time_left == "1-4 weeks":
-        add(2, "Spaced Repetition", 2, "A few weeks is enough to benefit from spaced review")
-
-    if subject == "Memorization":
-        add(3, "Active Recall (Flashcards)", 3, "Memorization improves most when you test yourself")
-
-    if subject == "Memorization":
-        add(4, "Mnemonics (Memory Tricks)", 2, "Memory tricks make facts easier to remember")
-
-    if subject == "Problem solving":
-        add(5, "Practice Problems", 3, "Problem-solving skill only comes from solving problems")
-
-    if subject == "Problem solving" and short_time:
-        add(6, "Timed Mock Exams", 3, "Your exam is close, so practice under exam conditions")
-
-    if subject == "Concepts and theory":
-        add(7, "Feynman Technique", 3, "Concept subjects need real understanding, and explaining simply tests that")
-
-    if subject == "Concepts and theory" and style == "Visual":
-        add(8, "Mind Maps", 3, "Mind maps show how concepts connect, and you learn visually")
-
-    if subject == "Concepts and theory" and style == "Reading and writing":
-        add(9, "Cornell Notes", 2, "You like reading and writing, and Cornell notes turn notes into self-tests")
-
-    if subject == "Concepts and theory" and company == "With other people":
-        add(10, "Study Group Discussion", 2, "Discussing concepts with others shows gaps in your understanding")
-
-    if subject == "Writing":
-        add(11, "Outline and Practice Essays", 3, "Writing improves by planning and practicing writing")
-
-    if subject == "Language learning":
-        add(12, "Spaced Repetition", 3, "Vocabulary sticks best with spaced review")
-
-    if subject == "Language learning":
-        add(13, "Oral Practice (Speak Out Loud)", 3, "A language is learned by speaking it")
-
-    if subject == "Language learning" and style == "Auditory":
-        add(14, "Record and Listen", 2, "You learn by hearing, which is perfect for languages")
-
-    # ---------- Rules about TIME LEFT (rules 15-18) ----------
-    if time_left == "1-2 days":
-        add(15, "Last-Minute Priority Plan", 3, "With only 1-2 days, you must pick the most important topics")
-
-    if short_time:
-        add(16, "Active Recall (Flashcards)", 2, "When time is short, testing yourself is the fastest way to learn")
-
-    if time_left == "1-4 weeks":
-        add(17, "Study Planner (Time Blocking)", 2, "A few weeks need a clear plan")
-
-    if time_left == "More than 1 month":
-        add(18, "Study Planner (Time Blocking)", 1, "A long runway needs a plan so you don't waste it")
-
-    # ---------- Rules about LEARNING STYLE (rules 19-23) ----------
-    if style == "Visual":
-        add(19, "Mind Maps", 1, "Visual learners usually like diagrams and colors")
-
-    if style == "Auditory":
-        add(20, "Record and Listen", 2, "You learn by hearing, so listen to your own recorded notes")
-
-    if style == "Auditory" and company == "With other people":
-        add(21, "Study Group Discussion", 2, "You learn by hearing and talking, and groups are perfect for that")
-
-    if style == "Reading and writing":
-        add(22, "Cornell Notes", 1, "You like reading and writing, so structured notes suit you")
-
-    if style == "Hands-on":
-        add(23, "Learn by Doing", 2, "You learn best by doing, so turn topics into practice tasks")
-
-    # ---------- Rules about the BIGGEST STRUGGLE (rules 24-32) ----------
-    if struggle == "Getting distracted":
-        add(24, "Pomodoro Technique", 3, "Short focused sprints help when your attention drifts")
-
-    if struggle == "Forgetting quickly":
-        add(25, "Active Recall (Flashcards)", 2, "Forgetting is fixed by pulling information out again and again")
-
-    if struggle == "Forgetting quickly":
-        add(26, "Spaced Repetition", 2, "Reviewing at growing gaps fights forgetting")
-
-    if struggle == "Not understanding":
-        add(27, "Feynman Technique", 2, "Explaining simply shows exactly which part you don't understand")
-
-    if struggle == "Not understanding" and level == "Beginner":
-        add(28, "Beginner Step-by-Step Path", 3, "You are new to this, so build up from the basics")
-
-    if struggle == "Procrastinating":
-        add(29, "Study Planner (Time Blocking)", 3, "Fixed time slots remove the 'when should I start?' decision")
-
-    if struggle == "Procrastinating":
-        add(30, "Goals and Rewards", 2, "Small goals with rewards make starting easier")
-
-    if struggle == "Exam nerves":
-        add(31, "Relaxation + Exam Rehearsal", 3, "Practicing in exam-like conditions makes the real exam feel familiar")
-
-    if struggle == "Exam nerves":
-        add(32, "Timed Mock Exams", 2, "Mock exams build confidence")
-
-    # ---------- Rule about STUDYING ALONE or WITH OTHERS (rule 33) ----------
-    if company == "With other people":
-        add(33, "Study Group Discussion", 1, "You said you like studying with other people")
-
-    # ---------- Rules about HOURS PER DAY (rules 34-35) ----------
-    if hours == "Less than 1 hour":
-        add(34, "Active Recall (Flashcards)", 2, "With little time per day, testing yourself is the most efficient method")
-
-    if hours == "More than 3 hours":
-        add(35, "Pomodoro Technique", 2, "Long study days need regular breaks to avoid burnout")
-
-    # ---------- Rules about the BEST TIME OF DAY (rules 36-38) ----------
-    if best_time == "Morning" and subject == "Problem solving":
-        add(36, "Practice Problems", 1, "Hard problems are best solved when your mind is fresh in the morning")
-
-    if best_time == "Night" and subject == "Memorization":
-        add(37, "Spaced Repetition", 1, "Reviewing before sleep helps memory")
-
-    if best_time == "Afternoon":
-        add(38, "Pomodoro Technique", 1, "Short sprints help during the afternoon energy dip")
-
-    # ---------- Rules about CONCENTRATION SPAN (rules 39-41) ----------
-    if focus == "Under 15 minutes":
-        add(39, "Pomodoro Technique", 3, "You focus for a short time, so use short sprints (try 15 minutes)")
-
-    if focus == "15 to 30 minutes":
-        add(40, "Pomodoro Technique", 2, "Your focus time fits the 25-minute sprint very well")
-
-    if focus == "More than 30 minutes":
-        add(41, "Deep Work Sessions", 2, "You can focus for a long time, so use long blocks")
-
-    # ---------- Rules about the STUDY PLACE (rules 42-44) ----------
-    if place == "Noisy home":
-        add(42, "Distraction-Free Setup", 3, "A noisy place needs a setup that blocks distractions")
-
-    if place == "Library":
-        add(43, "Deep Work Sessions", 1, "A library is a great place for long, focused sessions")
-
-    if place == "On the go (bus, travel)":
-        add(44, "Record and Listen", 2, "Audio is easy to study while travelling")
-
-    # ---------- Rules about PHONE DISTRACTION (rules 45-46) ----------
-    if phone == "Yes, a lot":
-        add(45, "Distraction-Free Setup", 3, "Your phone is a big distraction, so remove it from the room")
-
-    if phone == "Yes, a lot":
-        add(46, "Pomodoro Technique", 2, "A timer gives you a clear phone-free period")
-
-    # ---------- Rules about your LEVEL (rules 47-48) ----------
-    if level == "Beginner":
-        add(47, "Beginner Step-by-Step Path", 3, "As a beginner, start with the basics and build up")
-
-    if level == "Advanced":
-        add(48, "Timed Mock Exams", 2, "You know the subject well, so test yourself with real exam practice")
-
-    # ---------- Rules about the EXAM TYPE (rules 49-52) ----------
-    if exam == "Multiple choice":
-        add(49, "Practice Quizzes (Multiple Choice)", 3, "Practice with the same question style as your exam")
-
-    if exam == "Written answers":
-        add(50, "Outline and Practice Essays", 2, "Written exams need practice writing answers")
-
-    if exam == "Practical or lab":
-        add(51, "Learn by Doing", 3, "A practical exam tests what you can do, so practice doing it")
-
-    if exam == "Oral exam":
-        add(52, "Oral Practice (Speak Out Loud)", 3, "An oral exam needs practice speaking your answers")
-
-    # ---------- Rules about your NOTES (rules 53-55) ----------
-    if notes == "My notes are messy":
-        add(53, "Clean Up Your Notes", 3, "Clean notes make every other method easier")
-
-    if notes == "I only have a textbook":
-        add(54, "SQ3R Reading Method", 3, "A textbook needs an active reading method")
-
-    if notes == "I have good notes":
-        add(55, "Active Recall (Flashcards)", 1, "Good notes can be turned into questions and flashcards")
-
-    # ----- Step 4: sort the methods, most points first -----
-    ranked_names = sorted(scores, key=scores.get, reverse=True)
-
-    results = []
-    for name in ranked_names:
-        results.append({
-            "method": name,
-            "score": scores[name],
-            "reasons": reasons[name],
-        })
-    return results
-
-
-# =====================================================================
-# PART 6: DECISION MAKING and DECISION SUPPORT
-#
-# make_decision() runs the whole expert system from start to finish:
-#
-#     answers -> infer_facts -> diagnose -> find_methods -> DECISION
-#
-# DECISION MAKING : it picks the best study method (the top-scoring one)
-#                   and a short list of backup methods.
-# DECISION SUPPORT: it does not just give an answer. It also gives the
-#                   diagnosis, the reasons, the rules that fired and a
-#                   confidence level, so the student can judge the advice
-#                   and make the final choice.
-# =====================================================================
 def make_decision(answers, how_many=3):
     """
-    answers  : dictionary of the user's 13 answers
-    how_many : how many methods to recommend (default 3)
+    DECISION SUPPORT SYSTEM: run everything and return the advice together
+    with the explanation, so the student can judge it and decide.
 
-    returns  : a dictionary with everything the screen needs:
-               {"facts":      inferred facts,
-                "diagnosis":  list of diagnoses (see diagnose),
-                "ranking":    all methods, best first (see find_methods),
-                "decision":   the single best method (or None),
-                "alternatives": the next best methods,
-                "confidence": "High" / "Medium" / "Low",
-                "rules_fired": how many of the 55 rules were true,
-                "fired_rule_numbers": [1, 3, 4, ...],
-                "summary":    one plain sentence explaining the decision}
+    answers -> infer_facts -> diagnose -> find_methods -> decision
     """
-    # Step 1: INFERENCING
-    facts = infer_facts(answers)
+    facts = infer_facts(answers)           # 1. inferencing
+    diagnosis = diagnose(answers)          # 2. diagnosis
+    ranking = find_methods(answers)        # 3. the 55 rules
+    confidence = get_confidence(ranking)   # 4. how sure are we?
 
-    # Step 2: DIAGNOSIS
-    diagnosis = diagnose(answers)
+    # Each rule that is true gives exactly one reason, so counting reasons
+    # tells us how many rules matched.
+    rules_fired = sum(len(item["reasons"]) for item in ranking)
 
-    # Step 3: apply the 55 rules
-    ranking = find_methods(answers)
+    best_methods = ranking[:how_many]
+    decision = best_methods[0] if best_methods else None
 
-    # Step 4: find which rules fired (each reason text starts with "Rule N")
-    fired = set()
-    for item in ranking:
-        for reason in item["reasons"]:
-            match = re.match(r"Rule (\d+)", reason)
-            if match:
-                fired.add(int(match.group(1)))
-    fired_numbers = sorted(fired)
-
-    # Step 5: DECISION MAKING
-    top = ranking[:how_many]
-    decision = top[0] if top else None
-    alternatives = top[1:]
-
-    # Step 6: DECISION SUPPORT - how sure are we?
-    # Confidence depends on how many points the best method has and how
-    # far it is ahead of the second one.
-    if decision is None:
-        confidence = "Low"
-    else:
-        lead = decision["score"] - (ranking[1]["score"] if len(ranking) > 1 else 0)
-        if decision["score"] >= 8 or (decision["score"] >= 6 and lead >= 2):
-            confidence = "High"
-        elif decision["score"] >= 5:
-            confidence = "Medium"
-        else:
-            confidence = "Low"
-
-    # Step 7: a one-sentence explanation
     if decision is None:
         summary = "No rule matched your answers, so no method could be recommended."
     else:
-        main_problem = diagnosis[0]["problem"].lower()
-        summary = (f"Main problem found: {main_problem}. Best method: {decision['method']} "
-                   f"({decision['score']} points, {confidence} confidence), based on "
-                   f"{len(fired_numbers)} of the {TOTAL_RULES} rules.")
+        summary = (f"Main problem found: {diagnosis[0]['problem'].lower()}. "
+                   f"Best method: {decision['method']} ({decision['score']} points, "
+                   f"{confidence} confidence), based on {rules_fired} of the {TOTAL_RULES} rules.")
 
     return {
-        "facts": facts,
-        "diagnosis": diagnosis,
-        "ranking": ranking,
-        "decision": decision,
-        "alternatives": alternatives,
-        "confidence": confidence,
-        "rules_fired": len(fired_numbers),
-        "fired_rule_numbers": fired_numbers,
-        "summary": summary,
+        "facts": facts,                      # the inferred facts
+        "diagnosis": diagnosis,              # the study problems
+        "ranking": ranking,                  # all methods, best first
+        "decision": decision,                # the single best method
+        "alternatives": best_methods[1:],    # the next best methods
+        "confidence": confidence,            # High / Medium / Low
+        "rules_fired": rules_fired,          # how many rules were true
+        "summary": summary,                  # one sentence for the screen
     }
 
 
 # =====================================================================
-# Quick test: run  "python study_expert.py"  to try the engine
-# without the screen.
+# Quick test: run  "python study_expert.py"  to try the engine without the screen.
 # =====================================================================
 if __name__ == "__main__":
     test_answers = {
@@ -728,27 +567,21 @@ if __name__ == "__main__":
         "focus": "Under 15 minutes", "phone": "Yes, a lot", "place": "Noisy home",
         "company": "Alone",
     }
-
     result = make_decision(test_answers)
 
-    print("=== DECISION SUPPORT SUMMARY ===")
-    print(result["summary"])
+    print("DECISION SUPPORT:", result["summary"])
 
-    print("\n=== INFERRED FACTS (inferencing) ===")
+    print("\nINFERRED FACTS:")
     for name, value in result["facts"].items():
         if value:
-            print("  ", name, "= True")
+            print("  ", name)
 
-    print("\n=== DIAGNOSIS ===")
-    for d in result["diagnosis"]:
-        print(f"  [{d['severity']}] {d['problem']}: {d['cause']}")
-        for symptom in d["symptoms"]:
-            print("       symptom:", symptom)
+    print("\nDIAGNOSIS:")
+    for item in result["diagnosis"]:
+        print(f"   [{item['severity']}] {item['problem']}")
 
-    print("\n=== TOP DECISIONS (decision making) ===")
-    for place_number, item in enumerate(result["ranking"][:3], start=1):
-        print(f"{place_number}. {item['method']} - {item['score']} points")
+    print("\nTOP 3 DECISIONS:")
+    for number, item in enumerate(result["ranking"][:3], start=1):
+        print(f"{number}. {item['method']} - {item['score']} points")
         for reason in item["reasons"]:
             print("     ", reason)
-
-    print(f"\nRules fired: {result['rules_fired']} of {TOTAL_RULES}")
