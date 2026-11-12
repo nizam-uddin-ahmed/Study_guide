@@ -1,27 +1,42 @@
 """
 study_expert.py  -  THE BRAIN of the Study Method Finder
+=========================================================
 
-This file has NO screen code. It only contains the "expert knowledge":
+This is a RULE-BASED EXPERT SYSTEM and DECISION SUPPORT SYSTEM (DSS).
+It has NO screen code. It only contains the "expert knowledge".
 
-    1. METHODS        the study methods we can recommend
-    2. OPTIONS        the answers a user can pick for each question
-    3. find_methods() the 55 IF-THEN rules that pick the best methods
+    KNOWLEDGE BASE      METHODS, OPTIONS and the 55 IF-THEN rules (+ 7 diagnosis rules)
+    INFERENCE ENGINE    infer_facts() and find_methods()  (forward chaining)
+    DIAGNOSIS           diagnose()  finds the student's study problems from symptoms
+    DECISION MAKING     make_decision()  chooses the best study methods
+    DECISION SUPPORT    make_decision()  explains WHY, so the student decides
 
 HOW IT WORKS (in plain words)
-    - The user answers 13 questions. Each answer is a "fact".
-    - We check 55 rules. A rule looks like this:
+    1. The user answers 13 questions. Each answer is a "fact".
+    2. INFERENCING: we derive new facts from the answers
+       (example: "exam in 1-2 days"  ->  "urgent = True").
+    3. DIAGNOSIS: we look at the symptoms and find the student's problems
+       (example: phone distraction + short focus  ->  "Attention problem").
+    4. We check 55 IF-THEN rules. A rule looks like this:
           IF the subject is Memorization
           THEN give 3 points to "Active Recall"
-    - Every rule that is true adds points to a study method.
-    - The methods with the most points are the best advice.
+    5. DECISION MAKING: methods with the most points are the best advice.
+    6. DECISION SUPPORT: the system shows the diagnosis, the reasons and a
+       confidence level. It supports the student's decision, it does not
+       force it.
+
+    answers -> infer_facts -> diagnose -> find_methods -> make_decision
 
 The screen (buttons, questions, results) is in app.py.
 To test only this file, run:   python study_expert.py
 """
 
+import re
+
 # Facts about this rule base (used on the screen)
 TOTAL_RULES = 55
 TOTAL_CONDITIONS = 66      # 55 rules, and 11 of them test two things at once
+TOTAL_DIAGNOSIS_RULES = 7  # 7 diagnosis rules used by diagnose()
 
 
 # =====================================================================
@@ -200,7 +215,174 @@ OPTIONS = {
 
 
 # =====================================================================
-# PART 3: THE RULES AND THE ENGINE
+# PART 3: INFERENCING (derive NEW facts from the answers)
+#
+# This is the first step of forward chaining. The answers are the
+# "given facts". Here we INFER extra facts that the user never typed.
+# The diagnosis step below uses these inferred facts.
+#
+#     IF time_left is "1-2 days"        THEN urgent = True
+#     IF phone is "Yes, a lot"          THEN attention_risk = True
+#     ... and so on
+# =====================================================================
+def infer_facts(answers):
+    """
+    answers : dictionary of the user's 13 answers
+
+    returns : dictionary of inferred facts, for example
+              {"urgent": True, "attention_risk": False, ...}
+    """
+    facts = {}
+
+    # Time facts
+    facts["urgent"] = answers["time_left"] == "1-2 days"
+    facts["short_time"] = answers["time_left"] in ["1-2 days", "Less than 1 week"]
+    facts["plenty_of_time"] = answers["time_left"] == "More than 1 month"
+
+    # Attention facts
+    facts["attention_risk"] = (
+        answers["focus"] == "Under 15 minutes"
+        or answers["phone"] == "Yes, a lot"
+        or answers["place"] == "Noisy home"
+    )
+
+    # Study material facts
+    facts["weak_materials"] = answers["notes"] in ["My notes are messy", "I only have a textbook"]
+
+    # Experience and workload facts
+    facts["beginner"] = answers["level"] == "Beginner"
+    facts["low_study_hours"] = answers["hours"] == "Less than 1 hour"
+
+    # Facts that come from the "biggest struggle" answer
+    facts["memory_problem"] = answers["struggle"] == "Forgetting quickly"
+    facts["understanding_problem"] = answers["struggle"] == "Not understanding"
+    facts["motivation_problem"] = answers["struggle"] == "Procrastinating"
+    facts["anxiety_problem"] = answers["struggle"] == "Exam nerves"
+
+    return facts
+
+
+# =====================================================================
+# PART 4: DIAGNOSIS (find the student's study PROBLEMS from symptoms)
+#
+# Like a doctor: the answers are the SYMPTOMS, the problem is the
+# DIAGNOSIS, and the study methods are the TREATMENT.
+#
+# There are 7 diagnosis rules. Each one has a list of symptoms to check.
+# A problem is diagnosed when at least one symptom is present.
+# More symptoms = more severe problem:
+#       1 symptom = Mild,  2 symptoms = Moderate,  3+ symptoms = Severe
+# =====================================================================
+def diagnose(answers):
+    """
+    answers : dictionary of the user's 13 answers
+
+    returns : a list of diagnoses, most severe first. Each item looks like:
+              {"problem": "Attention problem",
+               "cause": "...",
+               "symptoms": ["You get distracted easily", ...],
+               "severity": "Moderate",
+               "treatment": ["Pomodoro Technique", "Distraction-Free Setup"]}
+    """
+    facts = infer_facts(answers)
+    findings = []
+
+    def check(rule_name, problem, cause, tests, treatment):
+        """Collect the symptoms that are TRUE. If there is any, record a diagnosis."""
+        symptoms = [text for condition, text in tests if condition]
+        if symptoms:
+            if len(symptoms) == 1:
+                severity = "Mild"
+            elif len(symptoms) == 2:
+                severity = "Moderate"
+            else:
+                severity = "Severe"
+            findings.append({
+                "rule": rule_name,
+                "problem": problem,
+                "cause": cause,
+                "symptoms": symptoms,
+                "severity": severity,
+                "treatment": treatment,
+            })
+
+    # D1: Attention problem
+    check("D1", "Attention problem",
+          "Your attention is being pulled away by a short focus span, your phone or noise",
+          [(answers["struggle"] == "Getting distracted", "You said you get distracted easily"),
+           (answers["focus"] == "Under 15 minutes", "You can only focus for under 15 minutes"),
+           (answers["phone"] == "Yes, a lot", "Your phone distracts you a lot"),
+           (answers["place"] == "Noisy home", "You study in a noisy place")],
+          ["Pomodoro Technique", "Distraction-Free Setup"])
+
+    # D2: Memory retention problem
+    check("D2", "Memory retention problem",
+          "Information is not being pulled out of memory often enough, so it fades",
+          [(facts["memory_problem"], "You said you forget quickly"),
+           (answers["subject"] == "Memorization" and facts["short_time"],
+            "You must memorize a lot in very little time"),
+           (facts["low_study_hours"] and answers["subject"] in ["Memorization", "Language learning"],
+            "You have under 1 hour a day for a memory-heavy subject")],
+          ["Active Recall (Flashcards)", "Spaced Repetition"])
+
+    # D3: Understanding gap
+    check("D3", "Understanding gap",
+          "The topic is being read but not truly understood, so the ideas do not connect",
+          [(facts["understanding_problem"], "You said you do not understand the material"),
+           (facts["beginner"], "You are a beginner in this subject"),
+           (answers["notes"] == "I only have a textbook" and answers["subject"] == "Concepts and theory",
+            "You are learning theory from a textbook only")],
+          ["Feynman Technique", "Beginner Step-by-Step Path"])
+
+    # D4: Motivation and planning problem
+    check("D4", "Motivation and planning problem",
+          "There is no fixed start time or small goal, so starting keeps getting delayed",
+          [(facts["motivation_problem"], "You said you procrastinate"),
+           (facts["plenty_of_time"] and facts["low_study_hours"],
+            "You have plenty of time left but study less than 1 hour a day")],
+          ["Study Planner (Time Blocking)", "Goals and Rewards"])
+
+    # D5: Exam anxiety
+    check("D5", "Exam anxiety",
+          "The exam feels unfamiliar and high-pressure, which makes you nervous",
+          [(facts["anxiety_problem"], "You said exam nerves are your biggest struggle"),
+           (facts["beginner"] and facts["short_time"],
+            "You are new to the subject and the exam is close")],
+          ["Relaxation + Exam Rehearsal", "Timed Mock Exams"])
+
+    # D6: Weak study materials
+    check("D6", "Weak study materials",
+          "Messy or missing notes make every study session slower",
+          [(answers["notes"] == "My notes are messy", "Your notes are messy"),
+           (answers["notes"] == "I only have a textbook", "You only have a textbook, with no notes")],
+          ["Clean Up Your Notes", "SQ3R Reading Method"])
+
+    # D7: Time pressure
+    check("D7", "Time pressure",
+          "There is not enough time to cover everything, so you must prioritize",
+          [(facts["urgent"], "Your exam is in only 1-2 days"),
+           (answers["time_left"] == "Less than 1 week" and facts["low_study_hours"],
+            "Your exam is within a week and you study under 1 hour a day")],
+          ["Last-Minute Priority Plan", "Active Recall (Flashcards)"])
+
+    # No problem found at all
+    if not findings:
+        findings.append({
+            "rule": "D0",
+            "problem": "No major problem found",
+            "cause": "Your answers show no strong warning signs",
+            "symptoms": [],
+            "severity": "None",
+            "treatment": [],
+        })
+
+    # Most severe first (more symptoms = more severe)
+    findings.sort(key=lambda item: len(item["symptoms"]), reverse=True)
+    return findings
+
+
+# =====================================================================
+# PART 5: THE RULES AND THE ENGINE
 #
 # find_methods() takes the user's answers and returns the study methods
 # sorted from best to worst.
@@ -446,6 +628,95 @@ def find_methods(answers):
 
 
 # =====================================================================
+# PART 6: DECISION MAKING and DECISION SUPPORT
+#
+# make_decision() runs the whole expert system from start to finish:
+#
+#     answers -> infer_facts -> diagnose -> find_methods -> DECISION
+#
+# DECISION MAKING : it picks the best study method (the top-scoring one)
+#                   and a short list of backup methods.
+# DECISION SUPPORT: it does not just give an answer. It also gives the
+#                   diagnosis, the reasons, the rules that fired and a
+#                   confidence level, so the student can judge the advice
+#                   and make the final choice.
+# =====================================================================
+def make_decision(answers, how_many=3):
+    """
+    answers  : dictionary of the user's 13 answers
+    how_many : how many methods to recommend (default 3)
+
+    returns  : a dictionary with everything the screen needs:
+               {"facts":      inferred facts,
+                "diagnosis":  list of diagnoses (see diagnose),
+                "ranking":    all methods, best first (see find_methods),
+                "decision":   the single best method (or None),
+                "alternatives": the next best methods,
+                "confidence": "High" / "Medium" / "Low",
+                "rules_fired": how many of the 55 rules were true,
+                "fired_rule_numbers": [1, 3, 4, ...],
+                "summary":    one plain sentence explaining the decision}
+    """
+    # Step 1: INFERENCING
+    facts = infer_facts(answers)
+
+    # Step 2: DIAGNOSIS
+    diagnosis = diagnose(answers)
+
+    # Step 3: apply the 55 rules
+    ranking = find_methods(answers)
+
+    # Step 4: find which rules fired (each reason text starts with "Rule N")
+    fired = set()
+    for item in ranking:
+        for reason in item["reasons"]:
+            match = re.match(r"Rule (\d+)", reason)
+            if match:
+                fired.add(int(match.group(1)))
+    fired_numbers = sorted(fired)
+
+    # Step 5: DECISION MAKING
+    top = ranking[:how_many]
+    decision = top[0] if top else None
+    alternatives = top[1:]
+
+    # Step 6: DECISION SUPPORT - how sure are we?
+    # Confidence depends on how many points the best method has and how
+    # far it is ahead of the second one.
+    if decision is None:
+        confidence = "Low"
+    else:
+        lead = decision["score"] - (ranking[1]["score"] if len(ranking) > 1 else 0)
+        if decision["score"] >= 8 or (decision["score"] >= 6 and lead >= 2):
+            confidence = "High"
+        elif decision["score"] >= 5:
+            confidence = "Medium"
+        else:
+            confidence = "Low"
+
+    # Step 7: a one-sentence explanation
+    if decision is None:
+        summary = "No rule matched your answers, so no method could be recommended."
+    else:
+        main_problem = diagnosis[0]["problem"].lower()
+        summary = (f"Main problem found: {main_problem}. Best method: {decision['method']} "
+                   f"({decision['score']} points, {confidence} confidence), based on "
+                   f"{len(fired_numbers)} of the {TOTAL_RULES} rules.")
+
+    return {
+        "facts": facts,
+        "diagnosis": diagnosis,
+        "ranking": ranking,
+        "decision": decision,
+        "alternatives": alternatives,
+        "confidence": confidence,
+        "rules_fired": len(fired_numbers),
+        "fired_rule_numbers": fired_numbers,
+        "summary": summary,
+    }
+
+
+# =====================================================================
 # Quick test: run  "python study_expert.py"  to try the engine
 # without the screen.
 # =====================================================================
@@ -457,7 +728,27 @@ if __name__ == "__main__":
         "focus": "Under 15 minutes", "phone": "Yes, a lot", "place": "Noisy home",
         "company": "Alone",
     }
-    for place_number, result in enumerate(find_methods(test_answers)[:3], start=1):
-        print(f"{place_number}. {result['method']} - {result['score']} points")
-        for reason in result["reasons"]:
+
+    result = make_decision(test_answers)
+
+    print("=== DECISION SUPPORT SUMMARY ===")
+    print(result["summary"])
+
+    print("\n=== INFERRED FACTS (inferencing) ===")
+    for name, value in result["facts"].items():
+        if value:
+            print("  ", name, "= True")
+
+    print("\n=== DIAGNOSIS ===")
+    for d in result["diagnosis"]:
+        print(f"  [{d['severity']}] {d['problem']}: {d['cause']}")
+        for symptom in d["symptoms"]:
+            print("       symptom:", symptom)
+
+    print("\n=== TOP DECISIONS (decision making) ===")
+    for place_number, item in enumerate(result["ranking"][:3], start=1):
+        print(f"{place_number}. {item['method']} - {item['score']} points")
+        for reason in item["reasons"]:
             print("     ", reason)
+
+    print(f"\nRules fired: {result['rules_fired']} of {TOTAL_RULES}")
